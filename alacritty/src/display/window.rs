@@ -380,6 +380,12 @@ impl Window {
 
     pub fn set_blur(&self, blur: bool) {
         self.window.set_blur(blur);
+        #[cfg(windows)]
+        self.window.set_system_backdrop(if blur {
+            BackdropType::TransientWindow
+        } else {
+            BackdropType::Auto
+        });
     }
 
     pub fn set_maximized(&self, maximized: bool) {
