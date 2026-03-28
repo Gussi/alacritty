@@ -384,7 +384,7 @@ impl Window {
         self.window.set_system_backdrop(if blur {
             BackdropType::TransientWindow
         } else {
-            BackdropType::Auto
+            BackdropType::None
         });
     }
 
