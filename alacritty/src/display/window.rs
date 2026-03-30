@@ -33,6 +33,14 @@ use winit::event_loop::ActiveEventLoop;
 use winit::monitor::MonitorHandle;
 #[cfg(windows)]
 use winit::platform::windows::{BackdropType, IconExtWindows, WindowAttributesExtWindows, WindowExtWindows};
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+    UI::{
+        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+        WindowsAndMessaging::WM_NCACTIVATE,
+    },
+};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{
     CursorIcon, Fullscreen, ImePurpose, Theme, UserAttentionType, Window as WinitWindow,
@@ -49,6 +57,43 @@ use crate::display::SizeInfo;
 /// Window icon for `_NET_WM_ICON` property.
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 const WINDOW_ICON: &[u8] = include_bytes!("../../extra/logo/compat/alacritty-term.png");
+
+/// Subclass ID used to identify the blur subclass procedure.
+#[cfg(windows)]
+const BLUR_SUBCLASS_ID: usize = 0x41_4C_41_52; // 'ALAR'
+
+/// Subclass procedure that keeps the Acrylic backdrop active on focus loss.
+///
+/// By default, Windows switches `DWMSBT_TRANSIENTWINDOW` (Acrylic) from live blur to a
+/// flat fallback color when a window loses focus. This happens when `WM_NCACTIVATE` with
+/// `wParam=FALSE` is processed by `DefWindowProc`. Returning `FALSE` here prevents that
+/// visual update, so the blur persists while the window is inactive.
+///
+/// Focus events continue to fire normally because Alacritty's focus tracking goes through
+/// `WM_KILLFOCUS`, which is unaffected by this interception.
+#[cfg(windows)]
+unsafe extern "system" fn blur_subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _subclass_id: usize,
+    _ref_data: usize,
+) -> LRESULT {
+    if msg == WM_NCACTIVATE && wparam == 0 {
+        return 0;
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// Extract the Win32 HWND from a winit window.
+#[cfg(windows)]
+fn get_hwnd(window: &WinitWindow) -> Option<HWND> {
+    match window.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as HWND),
+        _ => None,
+    }
+}
 
 /// This should match the definition of IDI_ICON from `alacritty.rc`.
 #[cfg(windows)]
@@ -185,10 +230,14 @@ impl Window {
 
         let window = event_loop.create_window(window_attributes)?;
 
-        // Apply Acrylic backdrop on Windows 11 22H2+.
+        // Apply Acrylic backdrop on Windows 11 22H2+ and install a subclass to keep the
+        // blur active even when the window loses focus.
         #[cfg(windows)]
         if config.window.blur {
             window.set_system_backdrop(BackdropType::TransientWindow);
+            if let Some(hwnd) = get_hwnd(&window) {
+                unsafe { SetWindowSubclass(hwnd, Some(blur_subclass_proc), BLUR_SUBCLASS_ID, 0) };
+            }
         }
 
         // Text cursor.
@@ -381,11 +430,22 @@ impl Window {
     pub fn set_blur(&self, blur: bool) {
         self.window.set_blur(blur);
         #[cfg(windows)]
-        self.window.set_system_backdrop(if blur {
-            BackdropType::TransientWindow
-        } else {
-            BackdropType::None
-        });
+        {
+            self.window.set_system_backdrop(if blur {
+                BackdropType::TransientWindow
+            } else {
+                BackdropType::None
+            });
+            if let Some(hwnd) = get_hwnd(&self.window) {
+                unsafe {
+                    if blur {
+                        SetWindowSubclass(hwnd, Some(blur_subclass_proc), BLUR_SUBCLASS_ID, 0);
+                    } else {
+                        RemoveWindowSubclass(hwnd, Some(blur_subclass_proc), BLUR_SUBCLASS_ID);
+                    }
+                }
+            }
+        }
     }
 
     pub fn set_maximized(&self, maximized: bool) {
