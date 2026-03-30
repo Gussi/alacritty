@@ -32,7 +32,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
 use winit::monitor::MonitorHandle;
 #[cfg(windows)]
-use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+use winit::platform::windows::{BackdropType, IconExtWindows, WindowAttributesExtWindows, WindowExtWindows};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{
     CursorIcon, Fullscreen, ImePurpose, Theme, UserAttentionType, Window as WinitWindow,
@@ -184,6 +184,12 @@ impl Window {
             .with_window_level(config.window.level.into());
 
         let window = event_loop.create_window(window_attributes)?;
+
+        // Apply Acrylic backdrop on Windows 11 22H2+.
+        #[cfg(windows)]
+        if config.window.blur {
+            window.set_system_backdrop(BackdropType::TransientWindow);
+        }
 
         // Text cursor.
         let current_mouse_cursor = CursorIcon::Text;
@@ -374,6 +380,12 @@ impl Window {
 
     pub fn set_blur(&self, blur: bool) {
         self.window.set_blur(blur);
+        #[cfg(windows)]
+        self.window.set_system_backdrop(if blur {
+            BackdropType::TransientWindow
+        } else {
+            BackdropType::None
+        });
     }
 
     pub fn set_maximized(&self, maximized: bool) {
