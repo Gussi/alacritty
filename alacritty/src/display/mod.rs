@@ -685,7 +685,7 @@ impl Display {
         if let Some(dimensions) = pending_update.dimensions() {
             width = dimensions.width as f32;
             height = dimensions.height as f32;
-            log::debug!("Display dimensions updated to: {}x{}", dimensions.width, dimensions.height);
+            debug!("Display dimensions updated to: {}x{}", dimensions.width, dimensions.height);
         }
 
         let padding = config.window.padding(self.window.scale_factor as f32);

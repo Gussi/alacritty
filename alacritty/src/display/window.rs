@@ -35,11 +35,11 @@ use winit::monitor::MonitorHandle;
 use winit::platform::windows::{BackdropType, IconExtWindows, WindowAttributesExtWindows, WindowExtWindows};
 #[cfg(windows)]
 use windows_sys::Win32::{
-    Devices::Display::{GetMonitorInfoW, MONITORINFO},
-    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+    Graphics::Gdi::{GetMonitorInfoW, MONITORINFO, MonitorFromWindow, MONITOR_DEFAULTTONEAREST},
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     UI::{
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
-        WindowsAndMessaging::{MonitorFromWindow, WM_NCACTIVATE, MONITOR_DEFAULTTONEAREST},
+        WindowsAndMessaging::WM_NCACTIVATE,
     },
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -104,7 +104,7 @@ fn get_monitor_dimensions(window: &WinitWindow) -> Option<PhysicalSize<u32>> {
     
     unsafe {
         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        if monitor == 0 {
+        if monitor.is_null() {
             return None;
         }
         
@@ -528,7 +528,7 @@ impl Window {
             // display rotation to a borderless fullscreen window.
             #[cfg(windows)]
             if let Some(dimensions) = get_monitor_dimensions(&self.window) {
-                log::info!("Setting fullscreen dimensions to: {}x{}", dimensions.width, dimensions.height);
+                log::debug!("Setting fullscreen dimensions to: {}x{}", dimensions.width, dimensions.height);
                 self.request_inner_size(dimensions);
             }
         } else {
