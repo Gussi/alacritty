@@ -35,6 +35,7 @@ use winit::monitor::MonitorHandle;
 use winit::platform::windows::{BackdropType, IconExtWindows, WindowAttributesExtWindows, WindowExtWindows};
 #[cfg(windows)]
 use windows_sys::Win32::{
+    Graphics::Gdi::{GetMonitorInfoW, MONITORINFO, MonitorFromWindow, MONITOR_DEFAULTTONEAREST},
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     UI::{
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
@@ -92,6 +93,33 @@ fn get_hwnd(window: &WinitWindow) -> Option<HWND> {
     match window.window_handle().ok()?.as_raw() {
         RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as HWND),
         _ => None,
+    }
+}
+
+/// Get the monitor dimensions for the given window on Windows.
+/// This properly handles rotated/portrait displays by querying the actual monitor geometry.
+#[cfg(windows)]
+fn get_monitor_dimensions(window: &WinitWindow) -> Option<PhysicalSize<u32>> {
+    let hwnd = get_hwnd(window)?;
+    
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if monitor.is_null() {
+            return None;
+        }
+        
+        let mut monitor_info: MONITORINFO = std::mem::zeroed();
+        monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        
+        if GetMonitorInfoW(monitor, &mut monitor_info) == 0 {
+            return None;
+        }
+        
+        let rect = monitor_info.rcMonitor;
+        let width = (rect.right - rect.left) as u32;
+        let height = (rect.bottom - rect.top) as u32;
+        
+        Some(PhysicalSize::new(width, height))
     }
 }
 
@@ -494,6 +522,15 @@ impl Window {
     pub fn set_fullscreen(&self, fullscreen: bool) {
         if fullscreen {
             self.window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            
+            // On Windows, after entering fullscreen, explicitly request the correct monitor dimensions.
+            // This is necessary for portrait displays where Windows may not properly apply the
+            // display rotation to a borderless fullscreen window.
+            #[cfg(windows)]
+            if let Some(dimensions) = get_monitor_dimensions(&self.window) {
+                log::debug!("Setting fullscreen dimensions to: {}x{}", dimensions.width, dimensions.height);
+                self.request_inner_size(dimensions);
+            }
         } else {
             self.window.set_fullscreen(None);
         }
