@@ -19,6 +19,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y cmake pkg-config libfreetype6-dev libfontconfig1-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev python3 scdoc
       - name: Stable
         run: cargo test
       - name: Clippy
